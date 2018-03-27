@@ -62,8 +62,7 @@ static struct argp argp = { options, parse_opt, 0, doc };
 
 /* Print helpers */
 
-// define the VERBOSE_FLAG before using `trace()`
-// #define VERBOSE_FLAG *value*
+// define the VERBOSE_FLAG constant/variable/macro before using `trace()`
 #define trace(...) do { if(VERBOSE_FLAG) printf(__VA_ARGS__); } while (0)
 #define err(...) fprintf(stderr, __VA_ARGS__)
 
@@ -71,21 +70,18 @@ static struct argp argp = { options, parse_opt, 0, doc };
 void *get_in_addr(struct sockaddr *sa)
 {
     if (sa->sa_family == AF_INET)
-    {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
+        return &(((struct sockaddr_in*) sa)->sin_addr);
 
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+    return &(((struct sockaddr_in6*) sa)->sin6_addr);
 }
 
-// get port, IPv4 or IPv6:
+// get port, IPv4 or IPv6
 in_port_t get_in_port(struct sockaddr *sa)
 {
-    if (sa->sa_family == AF_INET) {
-        return (((struct sockaddr_in*)sa)->sin_port);
-    }
+    if (sa->sa_family == AF_INET)
+        return (((struct sockaddr_in*) sa)->sin_port);
 
-    return (((struct sockaddr_in6*)sa)->sin6_port);
+    return (((struct sockaddr_in6*) sa)->sin6_port);
 }
 
 static volatile sig_atomic_t done = 0;
@@ -95,12 +91,13 @@ void term(int signum)
 {
     (void) signum;
     done = 1;
+    // do not exit here, let the server handle this flag
 }
 
 //TODO: refactor
 int listen_connections(struct settings *settings)
 {
-#define VERBOSE_FLAG settings->verbose
+    int VERBOSE_FLAG = settings->verbose;
     int status;
     int listener_fd;
     struct addrinfo hints = { 0 };
@@ -182,6 +179,7 @@ int listen_connections(struct settings *settings)
     }
 
     trace("Set up SIGCHLD handler\n");
+    // SIG_IGN will automatically handle (close) children, leaving no zombies
     if(signal(SIGCHLD, SIG_IGN) == SIG_ERR)
     {
         perror("signal (SIGCHLD)");
@@ -194,7 +192,8 @@ int listen_connections(struct settings *settings)
     while(!done) //... until SIGTERM
     {
         int new_connection_fd;
-        char s[INET6_ADDRSTRLEN]; // IPv4 address will fit in this buffer too
+        int children_total = 0;
+        char ip[INET6_ADDRSTRLEN];
         struct sockaddr_storage their_addr;
         socklen_t sin_size;
 
@@ -213,19 +212,25 @@ int listen_connections(struct settings *settings)
         // convert client address for printing
         inet_ntop(their_addr.ss_family,
                   get_in_addr((struct sockaddr *)&their_addr),
-                  s, sizeof s);
+                  ip, sizeof(ip));
 
-        printf("Got connection from %s\n", s);
-
+        printf("Got connection from %s\n", ip);
+        children_total++;
         if (!fork())
         {
             /* child process */
             close(listener_fd);
 
             //TODO: actual communication
+            trace("child %d: Sending 'Hello, World!'\n", children_total);
             if (send(new_connection_fd, "Hello, world!", 13, 0) == -1)
             {
                 perror("send");
+                trace("E: send failed!");
+            }
+            else
+            {
+                printf("'Hello, world' sent!\n");
             }
 
             close(new_connection_fd);
@@ -235,7 +240,7 @@ int listen_connections(struct settings *settings)
         close(new_connection_fd);
     }
 
-#undef VERBOSE_FLAG
+    printf("Server terminated\n");
     return EXIT_SUCCESS;
 }
 
