@@ -21,7 +21,6 @@ You need CMake and GCC to build this example.
 ```
 mkdir build && cd build
 cmake ../
-cd build
 make
 ```
 
